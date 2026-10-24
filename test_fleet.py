@@ -1,37 +1,40 @@
+
 """
 test_fleet.py
 
 Purpose:
-    Verify that our simulated endpoint compliance rules work correctly.
+    Automatically verify endpoint compliance decisions and inventory
+    data validation.
+
+Run the tests from the project folder with:
+    python3 -m unittest -v
 
 Why this matters:
-    Automated tests help catch mistakes when we change our policy or
-    add features. They let us verify behavior without using real devices.
-
-How to run:
-    python3 -m unittest -v
+    Automated tests help catch regressions when the compliance engine
+    changes. These tests use fictional devices and require no physical
+    computers or paid services.
 """
 
 import unittest
 
-
-# Import the policy-evaluation function from fleet.py.
-# NOTE: Our current fleet.py does not expose this function yet.
-# We will refactor fleet.py in the next step so these tests can
-# call the compliance logic directly without running the whole report.
+# Import the function being tested.
+# The main report will not run during this import because fleet.py
+# protects its main() call with an if __name__ == "__main__" check.
 from fleet import evaluate_device
 
 
 class TestEndpointCompliance(unittest.TestCase):
-    """Tests for individual endpoint compliance decisions."""
+    """Tests for compliance decisions and invalid inventory data."""
 
     def setUp(self):
         """
-        Create a standard simulated device and policy for each test.
+        Prepare a fresh policy and sample device for every test.
 
-        Each test gets its own copy so changes in one test do not
+        Each test gets its own copy so a change in one test cannot
         accidentally affect another test.
         """
+
+        # Define the security requirements used by the test cases.
         self.policy = {
             "allowed_operating_systems": ["macOS", "Windows"],
             "minimum_os_versions": {
@@ -42,6 +45,8 @@ class TestEndpointCompliance(unittest.TestCase):
             "require_screen_lock": True,
         }
 
+        # This device meets every policy requirement by default.
+        # Individual tests change one or more values to test failures.
         self.device = {
             "id": "TEST-001",
             "owner": "Test User",
@@ -52,7 +57,7 @@ class TestEndpointCompliance(unittest.TestCase):
         }
 
     def test_fully_compliant_device(self):
-        """A device meeting every policy requirement should pass."""
+        """A device meeting every requirement should pass."""
         result = evaluate_device(self.device, self.policy)
 
         self.assertEqual(result["status"], "COMPLIANT")
@@ -60,7 +65,7 @@ class TestEndpointCompliance(unittest.TestCase):
         self.assertEqual(result["risk_level"], "LOW")
 
     def test_encryption_disabled(self):
-        """A device without required encryption should fail."""
+        """Disabled required encryption should fail compliance."""
         self.device["encryption"] = False
 
         result = evaluate_device(self.device, self.policy)
@@ -70,7 +75,7 @@ class TestEndpointCompliance(unittest.TestCase):
         self.assertEqual(result["risk_level"], "MEDIUM")
 
     def test_screen_lock_disabled(self):
-        """A device without the required screen lock should fail."""
+        """A disabled required screen lock should fail compliance."""
         self.device["screen_lock"] = False
 
         result = evaluate_device(self.device, self.policy)
@@ -80,7 +85,7 @@ class TestEndpointCompliance(unittest.TestCase):
         self.assertEqual(result["risk_level"], "MEDIUM")
 
     def test_unsupported_operating_system(self):
-        """An OS not allowed by policy should receive high risk."""
+        """An operating system outside the allowlist should be high risk."""
         self.device["os"] = "Linux"
 
         result = evaluate_device(self.device, self.policy)
@@ -93,7 +98,7 @@ class TestEndpointCompliance(unittest.TestCase):
         self.assertEqual(result["risk_level"], "HIGH")
 
     def test_os_version_too_old(self):
-        """An OS below its configured minimum should fail."""
+        """An OS version below the configured minimum should fail."""
         self.device["os_version"] = 13
 
         result = evaluate_device(self.device, self.policy)
@@ -103,7 +108,7 @@ class TestEndpointCompliance(unittest.TestCase):
         self.assertEqual(result["risk_level"], "HIGH")
 
     def test_multiple_issues(self):
-        """A device can have multiple failures at the same time."""
+        """The evaluator should report multiple security failures."""
         self.device["encryption"] = False
         self.device["screen_lock"] = False
 
@@ -112,10 +117,34 @@ class TestEndpointCompliance(unittest.TestCase):
         self.assertEqual(result["status"], "NON-COMPLIANT")
         self.assertIn("Encryption disabled", result["issues"])
         self.assertIn("Screen lock disabled", result["issues"])
+        self.assertEqual(result["risk_level"], "MEDIUM")
+
+    def test_missing_required_field(self):
+        """Missing inventory information should be reported, not crash."""
+        # Remove a field the evaluator needs to make a valid decision.
+        del self.device["encryption"]
+
+        result = evaluate_device(self.device, self.policy)
+
+        self.assertEqual(result["status"], "NON-COMPLIANT")
+        self.assertIn(
+            "Missing required field: encryption",
+            result["issues"],
+        )
+        self.assertEqual(result["risk_level"], "HIGH")
+
+    def test_invalid_os_version_type(self):
+        """A text OS version should be rejected as invalid inventory data."""
+        # The version should be an integer, not a text string.
+        self.device["os_version"] = "fifteen"
+
+        result = evaluate_device(self.device, self.policy)
+
+        self.assertEqual(result["status"], "NON-COMPLIANT")
+        self.assertIn("Invalid OS version value", result["issues"])
+        self.assertEqual(result["risk_level"], "HIGH")
 
 
-# Run the tests when this file is executed directly.
-# The command `python3 -m unittest -v` also discovers these tests.
+# Allow this test file to run directly as well as through unittest.
 if __name__ == "__main__":
     unittest.main(verbosity=2)
-    
