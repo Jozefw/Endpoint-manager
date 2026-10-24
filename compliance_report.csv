@@ -1,0 +1,7 @@
+Device ID,Owner,Operating System,OS Version,Encryption Enabled,Screen Lock Enabled,Status,Risk Level,Issues
+LAP-001,Alex,macOS,15,True,True,COMPLIANT,LOW,None
+LAP-002,Sam,Windows,11,True,True,COMPLIANT,LOW,None
+LAP-003,Jordan,macOS,15,True,True,COMPLIANT,LOW,None
+LAP-004,Taylor,Windows,11,False,True,NON-COMPLIANT,MEDIUM,Encryption disabled
+LAP-005,Morgan,macOS,15,True,True,COMPLIANT,LOW,None
+LAP-006,Casey,Linux,6,True,True,NON-COMPLIANT,HIGH,Unsupported operating system
