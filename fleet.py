@@ -1,12 +1,17 @@
+
 """
 fleet.py
 
 Purpose:
-    Evaluate simulated endpoint devices against a configurable
-    security policy, print a compliance report, and export results
-    to a CSV file.
+    Evaluate simulated endpoint devices against a configurable policy.
+    Print a compliance report and export the results to CSV.
 
-Project note:
+Validation:
+    Check inventory structure and field types before policy evaluation.
+    Invalid records are marked non-compliant with HIGH risk instead
+    of crashing the report.
+
+Scope:
     All device records are simulated. This script does not collect
     settings from real computers.
 """
@@ -16,73 +21,115 @@ import json
 
 
 def evaluate_device(device, policy):
-    """
-    Evaluate one device against the supplied policy.
+    """Validate and evaluate one simulated endpoint device."""
 
-    Args:
-        device: A dictionary containing a device's simulated settings.
-        policy: A dictionary containing the organization's requirements.
+    # Reject records that are not JSON objects represented as dictionaries.
+    if not isinstance(device, dict):
+        return {
+            "status": "NON-COMPLIANT",
+            "risk_level": "HIGH",
+            "issues": ["Invalid device record: expected a JSON object"],
+        }
 
-    Returns:
-        A dictionary containing the compliance status, risk level,
-        and a list of issues found.
+    # These fields are needed to evaluate and report a device.
+    required_fields = [
+        "id",
+        "owner",
+        "os",
+        "os_version",
+        "encryption",
+        "screen_lock",
+    ]
 
-    Why this is a function:
-        Separating the evaluation logic makes it reusable and allows
-        automated tests to check it without generating a report.
-    """
+    # Find missing fields before reading any values from the record.
+    issues = [
+        f"Missing required field: {field}"
+        for field in required_fields
+        if field not in device
+    ]
 
-    # Start with an empty list. Every failed requirement adds an issue.
+    # Stop early so missing values cannot cause a KeyError.
+    if issues:
+        return {
+            "status": "NON-COMPLIANT",
+            "risk_level": "HIGH",
+            "issues": issues,
+        }
+
+    # IDs and owner names must be non-empty strings.
+    for field in ["id", "owner"]:
+        if not isinstance(device[field], str) or not device[field].strip():
+            issues.append(f"Invalid value for field: {field}")
+
+    # Operating-system names must be non-empty strings.
+    if not isinstance(device["os"], str) or not device["os"].strip():
+        issues.append("Invalid operating system value")
+
+    # OS versions must be integers, and Boolean values are not acceptable.
+    if (
+        not isinstance(device["os_version"], int)
+        or isinstance(device["os_version"], bool)
+    ):
+        issues.append("Invalid OS version value")
+
+    # Security settings must be actual Boolean values, not text.
+    for field in ["encryption", "screen_lock"]:
+        if not isinstance(device[field], bool):
+            issues.append(f"Invalid Boolean value for field: {field}")
+
+    # Stop before policy comparisons if any value has the wrong type.
+    # For example, this prevents comparing "fifteen" with the number 14.
+    if issues:
+        return {
+            "status": "NON-COMPLIANT",
+            "risk_level": "HIGH",
+            "issues": issues,
+        }
+
+    # Begin policy evaluation only after inventory validation succeeds.
     issues = []
-
-    # LOW is the default risk for a device with no policy violations.
-    # Serious operating-system problems can raise this to HIGH.
     risk_level = "LOW"
 
-    # Read the operating-system requirements from the policy.
+    # Read the operating-system allowlist and minimum-version settings.
     allowed_os = policy["allowed_operating_systems"]
     minimum_versions = policy["minimum_os_versions"]
 
-    # Check whether the device uses an operating system approved
-    # by the policy. An unsupported OS cannot be version-checked
-    # using our configured minimum-version rules.
+    # Unsupported operating systems are high risk.
     if device["os"] not in allowed_os:
         issues.append("Unsupported operating system")
         risk_level = "HIGH"
-
     else:
-        # Find the minimum acceptable version for this OS.
-        minimum_version = minimum_versions[device["os"]]
+        # Retrieve the minimum version for this approved OS.
+        minimum_version = minimum_versions.get(device["os"])
 
-        # Compare the simulated version against the policy minimum.
-        if device["os_version"] < minimum_version:
+        # Validate the policy value before comparing versions.
+        if (
+            not isinstance(minimum_version, int)
+            or isinstance(minimum_version, bool)
+        ):
+            issues.append(
+                f"Missing or invalid minimum OS version for {device['os']}"
+            )
+            risk_level = "HIGH"
+        elif device["os_version"] < minimum_version:
             issues.append("OS version too old")
             risk_level = "HIGH"
 
-    # Check disk encryption only when the policy requires it.
-    # If encryption is required but disabled, record a violation.
+    # Required encryption must be enabled.
     if policy["require_encryption"] and not device["encryption"]:
         issues.append("Encryption disabled")
-
-        # Do not downgrade HIGH risk if another serious issue exists.
         if risk_level != "HIGH":
             risk_level = "MEDIUM"
 
-    # Check screen-lock settings only when required by the policy.
+    # Required screen locking must be enabled.
     if policy["require_screen_lock"] and not device["screen_lock"]:
         issues.append("Screen lock disabled")
-
-        # Preserve HIGH risk if an OS issue was already found.
         if risk_level != "HIGH":
             risk_level = "MEDIUM"
 
-    # A device is compliant only when no issues were identified.
-    if issues:
-        status = "NON-COMPLIANT"
-    else:
-        status = "COMPLIANT"
+    # A device passes only if no policy violations were found.
+    status = "NON-COMPLIANT" if issues else "COMPLIANT"
 
-    # Return structured results so other code and tests can use them.
     return {
         "status": status,
         "risk_level": risk_level,
@@ -91,95 +138,81 @@ def evaluate_device(device, policy):
 
 
 def load_json_file(filename):
-    """
-    Read a JSON file and convert its contents into Python data.
-
-    Keeping file loading in a function avoids repeating the same
-    open-and-load code for the inventory and policy files.
-    """
-    with open(filename, "r") as file:
+    """Read a JSON file and return the parsed Python data."""
+    with open(filename, "r", encoding="utf-8") as file:
         return json.load(file)
 
 
 def main():
-    """
-    Run the complete reporting workflow.
+    """Load the fleet, evaluate devices, print results, and export CSV."""
 
-    This function loads the files, evaluates every device, prints
-    the fleet summary, and writes the detailed CSV report.
-    """
-
-    # Load the simulated device inventory and compliance policy.
+    # Load simulated inventory and the organization's policy.
     devices = load_json_file("devices.json")
     policy = load_json_file("policy.json")
 
     print("ENDPOINT FLEET COMPLIANCE REPORT")
     print("--------------------------------")
 
-    # Track the number of compliant devices for fleet-wide statistics.
     compliant_devices = 0
-
-    # Collect one report row per device for the CSV export.
     report_rows = []
 
-    # Evaluate each device independently against the same policy.
+    # Evaluate each device separately.
     for device in devices:
         result = evaluate_device(device, policy)
 
-        # Extract the results returned by our evaluation function.
         status = result["status"]
         risk_level = result["risk_level"]
         issues = result["issues"]
 
-        # Count compliant devices so we can calculate the fleet rate.
+        # Count devices that satisfy every configured requirement.
         if status == "COMPLIANT":
             compliant_devices += 1
 
-        # Print the device's summary and any policy violations.
-        print(
-            f'{device["id"]} | {device["owner"]} | '
-            f'{status} | Risk: {risk_level}'
-        )
+        # Use safe lookups so malformed records can still be reported.
+        if isinstance(device, dict):
+            device_id = device.get("id", "UNKNOWN")
+            owner = device.get("owner", "UNKNOWN")
+        else:
+            device_id = "UNKNOWN"
+            owner = "UNKNOWN"
 
+        print(f"{device_id} | {owner} | {status} | Risk: {risk_level}")
+
+        # Print all issues to make remediation clear.
         for issue in issues:
             print(f"    ISSUE: {issue}")
 
-        # Convert the issue list into a readable CSV field.
-        # Devices without issues receive the text "None".
+        # Prepare a readable issue summary for the CSV.
         issue_text = "; ".join(issues) if issues else "None"
 
-        # Store both the original inventory fields and the evaluation
-        # results so the CSV contains useful troubleshooting details.
+        # Preserve available inventory values in the report.
+        # Missing values are represented by empty strings.
         report_rows.append({
-            "Device ID": device["id"],
-            "Owner": device["owner"],
-            "Operating System": device["os"],
-            "OS Version": device["os_version"],
-            "Encryption Enabled": device["encryption"],
-            "Screen Lock Enabled": device["screen_lock"],
+            "Device ID": device.get("id", "") if isinstance(device, dict) else "",
+            "Owner": device.get("owner", "") if isinstance(device, dict) else "",
+            "Operating System": device.get("os", "") if isinstance(device, dict) else "",
+            "OS Version": device.get("os_version", "") if isinstance(device, dict) else "",
+            "Encryption Enabled": device.get("encryption", "") if isinstance(device, dict) else "",
+            "Screen Lock Enabled": device.get("screen_lock", "") if isinstance(device, dict) else "",
             "Status": status,
             "Risk Level": risk_level,
             "Issues": issue_text,
         })
 
-    # Calculate fleet-wide statistics after all devices are checked.
+    # Calculate the fleet totals and overall compliance percentage.
     total_devices = len(devices)
     non_compliant_devices = total_devices - compliant_devices
+    compliance_rate = (
+        compliant_devices / total_devices * 100 if total_devices else 0.0
+    )
 
-    # Avoid dividing by zero if the inventory contains no devices.
-    if total_devices > 0:
-        compliance_rate = compliant_devices / total_devices * 100
-    else:
-        compliance_rate = 0.0
-
-    # Print the overall fleet summary.
     print("--------------------------------")
     print(f"Total devices: {total_devices}")
     print(f"Compliant devices: {compliant_devices}")
     print(f"Non-compliant devices: {non_compliant_devices}")
     print(f"Fleet compliance: {compliance_rate:.1f}%")
 
-    # Define the column order for the exported CSV report.
+    # Keep the report columns consistent between runs.
     fieldnames = [
         "Device ID",
         "Owner",
@@ -192,19 +225,21 @@ def main():
         "Issues",
     ]
 
-    # Write the report to a file that can be opened in Excel or Numbers.
-    # newline="" helps Python write CSV rows correctly on different systems.
-    with open("compliance_report.csv", "w", newline="") as file:
+    # Write the report, replacing the previous generated CSV.
+    with open(
+        "compliance_report.csv",
+        "w",
+        newline="",
+        encoding="utf-8",
+    ) as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
-
-        # Write the column headings first, followed by every device row.
         writer.writeheader()
         writer.writerows(report_rows)
 
     print("CSV report saved: compliance_report.csv")
 
 
-# Run the reporting workflow only when this file is executed directly.
-# Importing evaluate_device from a test file will not run the report.
+# Only run the report when this file is executed directly.
+# Importing evaluate_device from the test file will not generate a report.
 if __name__ == "__main__":
     main()
