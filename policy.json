@@ -1,0 +1,11 @@
+{
+    "allowed_operating_systems": [
+        "macOS", "Windows"
+    ],
+    "minimum_os_versions": {
+        "macOS": 14,
+        "Windows": 10
+    },
+    "require_encryption": true,
+    "require_screen_lock": true
+}

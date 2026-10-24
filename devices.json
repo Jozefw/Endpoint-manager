@@ -1,0 +1,45 @@
+[
+    {
+        "id": "LAP-001",
+        "owner": "Alex",
+        "os": "macOS",
+        "os_version": 15,
+        "encryption": true,
+        "screen_lock": true
+    }, {
+        "id": "LAP-002",
+        "owner": "Sam",
+        "os": "Windows",
+        "os_version": 11,
+        "encryption": true,
+        "screen_lock": true
+    }, {
+        "id": "LAP-003",
+        "owner": "Jordan",
+        "os": "macOS",
+        "os_version": 15,
+        "encryption": true,
+        "screen_lock": true
+    }, {
+        "id": "LAP-004",
+        "owner": "Taylor",
+        "os": "Windows",
+        "os_version": 11,
+        "encryption": false,
+        "screen_lock": true
+    }, {
+        "id": "LAP-005",
+        "owner": "Morgan",
+        "os": "macOS",
+        "os_version": 15,
+        "encryption": true,
+        "screen_lock": true
+    }, {
+        "id": "LAP-006",
+        "owner": "Casey",
+        "os": "Linux",
+        "os_version": 6,
+        "encryption": true,
+        "screen_lock": true
+    }
+]
